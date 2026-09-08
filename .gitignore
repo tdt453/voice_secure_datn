@@ -1,0 +1,42 @@
+# ================================
+# Python
+# ================================
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+
+# Virtual Environment
+venv/
+.env/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python cache
+.pytest_cache/
+.mypy_cache/
+
+# ================================
+# Audio outputs
+# ================================
+results/audio/*.wav
+
+# ================================
+# Temporary logs
+# ================================
+*.log
+
+# ================================
+# OS files
+# ================================
+.DS_Store
+Thumbs.db
+
+# ================================
+# Large generated figures (optional)
+# Keep PNG results if needed
+# ================================

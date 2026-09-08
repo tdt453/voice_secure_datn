@@ -1,0 +1,22 @@
+Wrong Master Key Audio Analysis
+=============================================
+
+Audio File : data/voice.wav
+Blocks     : 10056
+Eb/N0      : 20 dB
+
+Bob
+BER         : 0.00000000
+Entropy     : 5.432106
+Correlation : 0.941584
+PSNR        : inf
+SNR         : inf
+
+Eve
+BER         : 0.49958669
+Entropy     : 7.998865
+Correlation : 0.001945
+PSNR        : 4.602081323374928
+SNR         : -14.174610324467077
+
+Runtime : 762.72 seconds

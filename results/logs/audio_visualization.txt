@@ -1,0 +1,31 @@
+Audio Visualization Experiment (DATN v1.0)
+=======================================================
+
+Input Audio
+File        : data/voice.wav
+Sample Rate : 16000 Hz
+Samples     : 160896
+Audio Bits  : 2574336
+Blocks      : 10056
+Frames      : 503
+Eb/N0       : 20 dB
+
+Security Metrics
+Original Entropy      : 5.432106
+Encrypted Entropy     : 7.998785
+Recovered Entropy     : 5.432106
+
+Original Correlation  : 0.941584
+Encrypted Correlation : -0.004724
+Recovered Correlation : 0.941584
+
+MSE                  : 0.0000000000
+PSNR (dB)            : inf
+SNR (dB)             : inf
+Recovered BER         : 0.0000000000
+
+Runtime
+Pipeline Runtime : 395.36 s
+Figure Runtime   : 67.41 s
+Metrics Runtime  : 0.07 s
+Total Runtime    : 462.83 s

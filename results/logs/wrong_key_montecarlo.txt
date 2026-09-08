@@ -1,0 +1,8 @@
+Monte Carlo Wrong Key Evaluation
+=============================================
+
+Blocks        : 1000
+Eb/N0         : 20 dB
+
+Bob BER       : 0.000000
+Eve BER       : 0.499879

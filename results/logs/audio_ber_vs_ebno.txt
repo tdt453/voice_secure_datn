@@ -1,0 +1,20 @@
+Audio BER vs Eb/N0 Experiment (DATN v1.2)
+==================================================
+
+Input Audio : data/voice.wav
+Sample Rate : 16000 Hz
+Audio Bits  : 512000
+Blocks      : 2000
+Frames      : 100
+Mode        : FAST
+
+Eb/N0= -5 dB | BER=0.487217 | Errors=249455 | Bits=512000 | Runtime=77.52s
+Eb/N0=  0 dB | BER=0.001000 | Errors=512 | Bits=512000 | Runtime=77.78s
+Eb/N0=  5 dB | BER=0.000000 | Errors=0 | Bits=512000 | Runtime=77.77s
+Eb/N0= 10 dB | BER=0.000000 | Errors=0 | Bits=512000 | Runtime=77.98s
+Eb/N0= 15 dB | BER=0.000000 | Errors=0 | Bits=512000 | Runtime=77.77s
+Eb/N0= 20 dB | BER=0.000000 | Errors=0 | Bits=512000 | Runtime=77.91s
+Eb/N0= 25 dB | BER=0.000000 | Errors=0 | Bits=512000 | Runtime=77.95s
+Eb/N0= 30 dB | BER=0.000000 | Errors=0 | Bits=512000 | Runtime=77.82s
+
+Total Runtime : 625.16 s

@@ -1,0 +1,2 @@
+SampleRate,Samples,AudioBits,Blocks,Frames,EbN0(dB),RecoveredBER,PipelineRuntime(s),FigureRuntime(s),MetricsRuntime(s)
+16000,160896,2574336,10056,503,20,0.0,395.3564066886902,67.40738344192505,0.06578874588012695
