@@ -1,25 +1,22 @@
-# ===========================
 # Python
-# ===========================
 venv/
 __pycache__/
 *.pyc
 *.pyo
 
-# ===========================
 # Generated experiment outputs
-# ===========================
 results/
 logs/
 output/
 codec_results/
 
-# Generated audio/data
+# Audio / Binary files
 *.wav
 *.bin
 *.m4a
 *.spx
+*.csv
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
