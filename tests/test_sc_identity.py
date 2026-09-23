@@ -1,6 +1,6 @@
 """
-tests/test_sc_identity.py
-Kiểm tra Encoder -> Decoder KHÔNG có nhiễu.
+Identity Test
+Encoder -> Decoder (No Noise)
 """
 
 import numpy as np
@@ -14,22 +14,26 @@ print("="*60)
 print("POLAR IDENTITY TEST (NO NOISE)")
 print("="*60)
 
-info = np.random.randint(0,2,POLAR_K,dtype=np.uint8)
+# Random information bits
+info = np.random.randint(
+    0,2,POLAR_K,dtype=np.uint8
+)
 
+# Encode
 codeword = polar_encode(info)
 
-# Không thêm nhiễu
+# Perfect channel (BPSK without noise)
 symbols = bpsk_modulate(codeword)
 
-# LLR rất lớn
+# Infinite LLR
 llr = symbols * 1000.0
 
-info_hat, _ = polar_decode(llr)
+decoded, _ = polar_decode(llr)
 
-ber = np.mean(info != info_hat)
+ber = np.mean(decoded != info)
 
 print("BER =", ber)
 
 assert ber == 0
 
-print("PASS")
+print("[PASS] Identity Test")
