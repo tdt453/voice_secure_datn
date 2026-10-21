@@ -6,7 +6,7 @@ Raspberry Pi implementation of a secure voice communication system using:
 - Dynamic Frozen Bits
 - AES/SNOW-V Keystream
 - Audio Crypto-Coding
-- Raspberry Pi 4 / Raspberry Pi 3
+- Raspberry Pi 4 
 
 ## Project Structure
 
@@ -30,5 +30,5 @@ Completed:
 - IEEE Figures
 
 Pending:
-- Raspberry Pi 4 ↔ Raspberry Pi 3 Real-Time Communication
+- Raspberry Pi 4 ↔ Raspberry Pi 4 Real-Time Communication
 - Audio Compression (IMA ADPCM)
