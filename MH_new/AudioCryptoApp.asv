@@ -1,0 +1,393 @@
+classdef AudioCryptoApp < matlab.apps.AppBase
+    % --- KHAI BÁO BIẾN DỮ LIỆU ---
+    properties (Access = public)
+        UIFigure             matlab.ui.Figure
+        GridLayout           matlab.ui.container.GridLayout
+        LeftPanel            matlab.ui.container.Panel
+        RightTabs            matlab.ui.container.TabGroup
+        
+        TabWaveform          matlab.ui.container.Tab
+        TabAnalysis          matlab.ui.container.Tab
+        TabCorrelation       matlab.ui.container.Tab
+        TabSecurity          matlab.ui.container.Tab
+        
+        % Axes (Biểu đồ)
+        % 1. Waveform
+        AxOrig               matlab.ui.control.UIAxes
+        AxEnc                matlab.ui.control.UIAxes
+        AxDec                matlab.ui.control.UIAxes
+        
+        % 2. Analysis (Hist & Spec) - CẬP NHẬT THÊM GỐC
+        AxHistOrig           matlab.ui.control.UIAxes % NEW: Hist Gốc
+        AxHistEnc            matlab.ui.control.UIAxes % Đổi tên từ AxHist -> AxHistEnc
+        AxSpecOrig           matlab.ui.control.UIAxes % NEW: Spec Gốc
+        AxSpecEnc            matlab.ui.control.UIAxes % Đổi tên từ AxSpec -> AxSpecEnc
+        
+        % 3. Correlation
+        AxCorrOrig           matlab.ui.control.UIAxes 
+        AxCorrEnc            matlab.ui.control.UIAxes 
+        
+        % 4. Security Attacks
+        AxCPA                matlab.ui.control.UIAxes 
+        AxKPA                matlab.ui.control.UIAxes 
+        
+        % Controls
+        BtnLoad              matlab.ui.control.Button
+        BtnEncrypt           matlab.ui.control.Button
+        BtnDecrypt           matlab.ui.control.Button
+        BtnPlayOrig          matlab.ui.control.Button
+        BtnPlayEnc           matlab.ui.control.Button
+        BtnPlayDec           matlab.ui.control.Button
+        
+        txtKey               matlab.ui.control.EditField
+        lblStatus            matlab.ui.control.Label
+        ResultTable          matlab.ui.control.Table
+        
+        % Data Variables
+        AudioOrig            
+        AudioEnc             
+        AudioDec             
+        Fs                   
+        ScaleFactor = 0.02;  
+        
+        % Crypto Variables
+        GlobalKey
+        IV
+    end
+
+    methods (Access = private)
+        
+        % --- 1. NÚT CHỌN FILE AUDIO ---
+        function LoadButtonPushed(app, ~, ~)
+            [file, path] = uigetfile({'*.wav;*.mp3;*.flac', 'Audio Files'});
+            if isequal(file, 0), return; end
+            
+            app.lblStatus.Text = 'Loading...'; drawnow;
+            try
+                [y, fs] = audioread(fullfile(path, file));
+                
+                % Xử lý Mono & Cắt ngắn (5s)
+                if size(y, 2) > 1, y = mean(y, 2); end
+                max_dur = 5;
+                if length(y) > fs * max_dur, y = y(1:floor(fs*max_dur)); end
+                
+                y = y * app.ScaleFactor; 
+                
+                app.AudioOrig = y;
+                app.Fs = fs;
+                app.AudioEnc = []; app.AudioDec = [];
+                
+                % Reset đồ thị Waveform
+                plot(app.AxOrig, y, 'b'); title(app.AxOrig, 'Original Waveform'); axis(app.AxOrig, 'tight');
+                
+                % Clear các đồ thị khác
+                cla(app.AxEnc); cla(app.AxDec); 
+                cla(app.AxHistOrig); cla(app.AxHistEnc);
+                cla(app.AxSpecOrig); cla(app.AxSpecEnc);
+                cla(app.AxCorrOrig); cla(app.AxCorrEnc);
+                cla(app.AxCPA); cla(app.AxKPA);
+                
+                % Reset bảng
+                app.ResultTable.Data = {'Ready', ''};
+                
+                app.lblStatus.Text = ['Loaded: ' file];
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Load Error');
+            end
+        end
+        
+        % --- 2. NÚT MÃ HÓA & PHÂN TÍCH (UPDATE) ---
+        function EncryptButtonPushed(app, ~, ~)
+            if isempty(app.AudioOrig)
+                uialert(app.UIFigure, 'Please Load Audio first!', 'Warning'); return;
+            end
+            
+            app.lblStatus.Text = 'Encrypting & Analyzing...'; drawnow;
+            
+            try
+                % --- A. CHUẨN BỊ DỮ LIỆU ---
+                keyStr = app.txtKey.Value;
+                if isempty(keyStr), keyStr = 'DefaultKey'; end
+                
+                % Hash Key
+                md5 = java.security.MessageDigest.getInstance('MD5');
+                app.GlobalKey = typecast(md5.digest(uint8(keyStr)), 'int8');
+                
+                % Chuẩn bị Plaintext (Convert Audio -> Uint8 để mã hóa)
+                y_norm = (app.AudioOrig(:) / app.ScaleFactor + 1) / 2; 
+                y_uint8 = uint8(y_norm * 255);
+                data_bytes = typecast(y_uint8(:), 'int8');
+                
+                % --- B. MÃ HÓA ---
+                app.IV = app.generate_hash_iv(data_bytes);
+                cipher_bytes = app.run_cipher_core(data_bytes, app.GlobalKey, app.IV);
+                
+                % Convert Ciphertext -> Audio
+                app.AudioEnc = (double(typecast(cipher_bytes, 'uint8')) / 255) * 2 - 1; 
+                
+                % --- C. TÍNH TOÁN CHỈ SỐ (METRICS) ---
+                % 1. PSNR
+                len_min = min(length(app.AudioOrig), length(app.AudioEnc));
+                mse = mean((app.AudioOrig(1:len_min) - app.AudioEnc(1:len_min)).^2);
+                psnr_val = 10 * log10((app.ScaleFactor^2) / mse);
+                
+                % 2. Entropy
+                c1 = double(typecast(cipher_bytes, 'uint8')); % Encrypted Values (0-255)
+                p = histcounts(c1, 0:256, 'Normalization', 'probability');
+                entropy_val = -sum(p(p>0) .* log2(p(p>0)));
+                
+                % 3. Correlation Coefficient
+                r = corrcoef(app.AudioOrig(1:len_min), app.AudioEnc(1:len_min));
+                corr_val = r(1,2);
+                
+                % 4. NSCR & UACI (Differential Attack Test)
+                data_mod = data_bytes; 
+                data_mod(1) = bitxor(data_mod(1), 1); % Thay đổi 1 bit
+                iv_mod = app.generate_hash_iv(data_mod); 
+                cipher_mod = app.run_cipher_core(data_mod, app.GlobalKey, iv_mod);
+                c2 = double(typecast(cipher_mod, 'uint8'));
+                
+                nscr = (sum(c1 ~= c2) / length(c1)) * 100;
+                uaci = (sum(abs(c1 - c2)) / (length(c1)*255)) * 100;
+                
+                % --- D. VẼ ĐỒ THỊ (VISUALIZATION) ---
+                
+                % 1. Waveform
+                plot(app.AxEnc, app.AudioEnc, 'r'); title(app.AxEnc, 'Encrypted Waveform'); axis(app.AxEnc, 'tight');
+                
+                % 2. HISTOGRAMS (GỐC vs MÃ HÓA)
+                % Gốc: Dùng dữ liệu uint8 trước mã hóa để so sánh tương quan distribution
+                histogram(app.AxHistOrig, double(y_uint8), 'FaceColor', 'b', 'EdgeColor', 'none');
+                title(app.AxHistOrig, 'Histogram (Original)');
+                xlabel(app.AxHistOrig, 'Pixel/Amplitude Value');
+                
+                % Mã hóa
+                histogram(app.AxHistEnc, c1, 'FaceColor', 'r', 'EdgeColor', 'none');
+                title(app.AxHistEnc, 'Histogram (Encrypted)');
+                xlabel(app.AxHistEnc, 'Pixel/Amplitude Value');
+                
+                % 3. SPECTROGRAMS (GỐC vs MÃ HÓA)
+                if exist('spectrogram', 'file')
+                    % --- Spectrogram Gốc ---
+                    [s1, f1, t1] = spectrogram(app.AudioOrig, 256, 128, 256, app.Fs);
+                    imagesc(app.AxSpecOrig, t1, f1, 20*log10(abs(s1))); 
+                    app.AxSpecOrig.YDir = 'normal';
+                    title(app.AxSpecOrig, 'Spectrogram (Original)');
+                    colorbar(app.AxSpecOrig);
+                    
+                    % --- Spectrogram Mã hóa ---
+                    [s2, f2, t2] = spectrogram(app.AudioEnc, 256, 128, 256, app.Fs);
+                    imagesc(app.AxSpecEnc, t2, f2, 20*log10(abs(s2))); 
+                    app.AxSpecEnc.YDir = 'normal';
+                    title(app.AxSpecEnc, 'Spectrogram (Encrypted)');
+                    colorbar(app.AxSpecEnc);
+                else
+                    % Fallback nếu không có Signal Toolbox
+                    plot(app.AxSpecOrig, abs(fft(app.AudioOrig))); title(app.AxSpecOrig, 'FFT Original');
+                    plot(app.AxSpecEnc, abs(fft(app.AudioEnc))); title(app.AxSpecEnc, 'FFT Encrypted');
+                end
+                
+                % 4. CORRELATION PLOTS (SCATTER)
+% --- SỬA ĐỔI: Lấy mẫu ở GIỮA file thay vì ở đầu ---
+len_audio = length(app.AudioOrig);
+num_pts = min(3000, len_audio - 1);
+
+% Tìm vị trí bắt đầu ở giữa file (để tránh khoảng lặng đầu file)
+start_idx = floor(len_audio / 2); 
+% Hoặc an toàn hơn: Kiểm tra biên giới hạn
+if start_idx + num_pts > len_audio
+    start_idx = 1; % Fallback về đầu nếu file quá ngắn
+end
+
+% Lấy dữ liệu đoạn giữa
+segment = app.AudioOrig(start_idx : start_idx + num_pts);
+
+% Vẽ Corr Gốc (Original)
+x_orig = segment(1:end-1);
+y_orig = segment(2:end);
+
+scatter(app.AxCorrOrig, x_orig, y_orig, 10, 'filled', 'MarkerFaceColor', [0 0.4470 0.7410]);
+title(app.AxCorrOrig, 'Original Correlation (Mid-segment)'); 
+grid(app.AxCorrOrig, 'on'); 
+% Tự động zoom vào dữ liệu để thấy rõ (quan trọng vì ScaleFactor nhỏ)
+axis(app.AxCorrOrig, 'tight'); 
+
+% Vẽ Corr Mã hóa (Encrypted)
+% Cũng lấy đoạn tương ứng của file mã hóa
+if length(app.AudioEnc) >= start_idx + num_pts
+    seg_enc = app.AudioEnc(start_idx : start_idx + num_pts);
+    x_enc = seg_enc(1:end-1);
+    y_enc = seg_enc(2:end);
+    scatter(app.AxCorrEnc, x_enc, y_enc, 10, 'filled', 'MarkerFaceColor', [0.8500 0.3250 0.0980]);
+    title(app.AxCorrEnc, 'Encrypted Correlation'); 
+    grid(app.AxCorrEnc, 'on');
+    axis(app.AxCorrEnc, 'tight');
+end
+                
+                % 5. SECURITY ATTACKS (CPA/KPA)
+                % CPA
+                k_diff = app.GlobalKey; k_diff(end) = bitxor(k_diff(end), 1);
+                c_k2 = app.run_cipher_core(data_bytes, k_diff, app.IV);
+                plot(app.AxCPA, abs(c1(1:min(200,end)) - double(typecast(c_k2(1:min(200,end)), 'uint8'))), 'm');
+                title(app.AxCPA, 'CPA: Key Sensitivity'); axis(app.AxCPA, 'tight');
+                
+                % KPA
+                ks1 = app.get_keystream(length(data_bytes), app.GlobalKey, app.IV);
+                ks2 = app.get_keystream(length(data_bytes), app.GlobalKey, iv_mod);
+                plot(app.AxKPA, abs(double(typecast(ks1(1:200), 'uint8')) - double(typecast(ks2(1:200), 'uint8'))), 'b');
+                title(app.AxKPA, 'KPA: Keystream Sensitivity'); axis(app.AxKPA, 'tight');
+                
+                % --- E. CẬP NHẬT BẢNG KẾT QUẢ ---
+                app.ResultTable.Data = {
+                    'PSNR (dB)',    sprintf('%.2f', psnr_val);
+                    'Entropy',      sprintf('%.4f', entropy_val);
+                    'Correlation',  sprintf('%.4f', corr_val);
+                    'NSCR (%)',     sprintf('%.2f', nscr);
+                    'UACI (%)',     sprintf('%.2f', uaci)
+                };
+                
+                app.lblStatus.Text = 'Analysis Completed.';
+                
+            catch ME
+                app.lblStatus.Text = 'Error!';
+                uialert(app.UIFigure, ME.message, 'Encryption Error');
+            end
+        end
+        
+        % --- 3. NÚT GIẢI MÃ ---
+        function DecryptButtonPushed(app, ~, ~)
+            if isempty(app.AudioEnc), return; end
+            try
+                y_enc_norm = (app.AudioEnc + 1) / 2;
+                enc_bytes = typecast(uint8(y_enc_norm * 255), 'int8');
+                dec_bytes = app.run_cipher_core(enc_bytes, app.GlobalKey, app.IV);
+                dec_uint8 = typecast(dec_bytes, 'uint8');
+                y_dec = (double(dec_uint8) / 255) * 2 - 1;
+                app.AudioDec = y_dec * app.ScaleFactor;
+                
+                plot(app.AxDec, app.AudioDec, 'g'); title(app.AxDec, 'Decrypted Waveform'); axis(app.AxDec, 'tight');
+                app.lblStatus.Text = 'Decryption Successful.';
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Decrypt Error');
+            end
+        end
+        
+        % Playback Helper
+        function PlayAudio(app, type)
+            y = [];
+            switch type
+                case 'orig', y = app.AudioOrig;
+                case 'enc', y = app.AudioEnc;
+                case 'dec', y = app.AudioDec;
+            end
+            if ~isempty(y), sound(y, app.Fs); end
+        end
+        
+        % --- HELPER FUNCTIONS ---
+        function iv = generate_hash_iv(~, data_bytes)
+            md = java.security.MessageDigest.getInstance('SHA-256');
+            hash = typecast(md.digest(data_bytes), 'int8');
+            iv = hash(1:16);
+        end
+        
+        function out_bytes = run_cipher_core(~, in_bytes, key, iv)
+            import javax.crypto.*
+            import javax.crypto.spec.*
+            sKeySpec = SecretKeySpec(key, 'AES');
+            ivSpec = IvParameterSpec(iv);
+            cipher = Cipher.getInstance('AES/CTR/NoPadding');
+            cipher.init(Cipher.ENCRYPT_MODE, sKeySpec, ivSpec);
+            zeros_in = zeros(1, length(in_bytes), 'int8');
+            ks_bytes = cipher.update(zeros_in);
+            out_bytes = bitxor(in_bytes, ks_bytes);
+        end
+        
+        function ks_bytes = get_keystream(~, len, key, iv)
+            import javax.crypto.*
+            import javax.crypto.spec.*
+            sKeySpec = SecretKeySpec(key, 'AES');
+            ivSpec = IvParameterSpec(iv);
+            cipher = Cipher.getInstance('AES/CTR/NoPadding');
+            cipher.init(Cipher.ENCRYPT_MODE, sKeySpec, ivSpec);
+            ks_bytes = cipher.update(zeros(1, len, 'int8'));
+        end
+    end
+
+    % --- GIAO DIỆN (LAYOUT UPDATE) ---
+    methods (Access = public)
+        function app = AudioCryptoApp
+            createComponents(app);
+            app.UIFigure.Visible = 'on';
+        end
+        
+        function createComponents(app)
+            % Window
+            app.UIFigure = uifigure('Position', [50 50 1200 750], 'Name', 'Matlab Audio Crypto App (Final)');
+            
+            % Grid Chính
+            g = uigridlayout(app.UIFigure, [1 2]);
+            g.ColumnWidth = {350, '1x'}; 
+            
+            % Panel Trái (Controls)
+            app.LeftPanel = uipanel(g, 'Title', 'Control Panel');
+            pnl = uigridlayout(app.LeftPanel, [13 1]);
+            pnl.RowHeight = {40, 40, 40, 40, 30, 40, 40, 40, 20, 20, 200, 30, '1x'}; 
+            
+            app.BtnLoad = uibutton(pnl, 'Text', '1. Load Audio', 'ButtonPushedFcn', @app.LoadButtonPushed, 'BackgroundColor', [0 0.45 0.74], 'FontColor', 'w', 'FontWeight', 'bold');
+            uilabel(pnl, 'Text', 'Secret Key:');
+            app.txtKey = uieditfield(pnl, 'Value', 'MyKey123', 'HorizontalAlignment', 'center');
+            app.BtnEncrypt = uibutton(pnl, 'Text', '2. Encrypt & Analyze', 'ButtonPushedFcn', @app.EncryptButtonPushed, 'BackgroundColor', [0.85 0.33 0.1], 'FontColor', 'w', 'FontWeight', 'bold');
+            app.BtnDecrypt = uibutton(pnl, 'Text', '3. Decrypt', 'ButtonPushedFcn', @app.DecryptButtonPushed, 'BackgroundColor', [0.47 0.67 0.19], 'FontColor', 'w', 'FontWeight', 'bold');
+            
+            uilabel(pnl, 'Text', '-- Playback --', 'HorizontalAlignment', 'center');
+            app.BtnPlayOrig = uibutton(pnl, 'Text', 'Play Original', 'ButtonPushedFcn', @(btn,event) app.PlayAudio('orig'));
+            app.BtnPlayEnc = uibutton(pnl, 'Text', 'Play Encrypted', 'ButtonPushedFcn', @(btn,event) app.PlayAudio('enc'));
+            app.BtnPlayDec = uibutton(pnl, 'Text', 'Play Decrypted', 'ButtonPushedFcn', @(btn,event) app.PlayAudio('dec'));
+            
+            uilabel(pnl, 'Text', 'Security Metrics:', 'FontWeight', 'bold');
+            app.ResultTable = uitable(pnl, 'ColumnName', {'Metric', 'Value'}, 'RowName', {}, 'ColumnWidth', {140, 150});
+            app.ResultTable.Data = {'No Data', ''; '', ''};
+            app.lblStatus = uilabel(pnl, 'Text', 'Ready.', 'FontColor', 'b');
+            
+            % Tabs Bên Phải (4 TABS)
+            app.RightTabs = uitabgroup(g);
+            
+            % Tab 1: Waveforms
+            app.TabWaveform = uitab(app.RightTabs, 'Title', 'Waveforms');
+            gw = uigridlayout(app.TabWaveform, [3 1]);
+            app.AxOrig = uiaxes(gw); title(app.AxOrig, 'Original Signal');
+            app.AxEnc = uiaxes(gw); title(app.AxEnc, 'Encrypted Signal (Noise-like)');
+            app.AxDec = uiaxes(gw); title(app.AxDec, 'Decrypted Signal (Recovered)');
+            
+            % Tab 2: Analysis (Hist + Spectrogram) -> CHIA 2x2
+            app.TabAnalysis = uitab(app.RightTabs, 'Title', 'Analysis (Hist & Spec)');
+            ga = uigridlayout(app.TabAnalysis, [2 2]); % Grid 2x2
+            
+            % Hàng 1: Histogram
+            app.AxHistOrig = uiaxes(ga); 
+            title(app.AxHistOrig, 'Histogram (Original)');
+            
+            app.AxHistEnc = uiaxes(ga); 
+            title(app.AxHistEnc, 'Histogram (Encrypted)');
+            
+            % Hàng 2: Spectrogram
+            app.AxSpecOrig = uiaxes(ga); 
+            title(app.AxSpecOrig, 'Spectrogram (Original)');
+            
+            app.AxSpecEnc = uiaxes(ga); 
+            title(app.AxSpecEnc, 'Spectrogram (Encrypted)');
+            
+            % Tab 3: Correlation
+            app.TabCorrelation = uitab(app.RightTabs, 'Title', 'Correlation');
+            gc = uigridlayout(app.TabCorrelation, [1 2]); 
+            app.AxCorrOrig = uiaxes(gc); title(app.AxCorrOrig, 'Original: High Correlation');
+            app.AxCorrEnc = uiaxes(gc);  title(app.AxCorrEnc, 'Encrypted: No Correlation');
+            
+            % Tab 4: Attacks
+            app.TabSecurity = uitab(app.RightTabs, 'Title', 'Attacks (CPA/KPA)');
+            gs = uigridlayout(app.TabSecurity, [2 1]);
+            app.AxCPA = uiaxes(gs); 
+            app.AxKPA = uiaxes(gs); 
+        end
+    end
+end
